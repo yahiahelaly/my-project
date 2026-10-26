@@ -1,0 +1,127 @@
+Lab 3 - Problem 1 answers (COMPANY database)
+Student: Amr Khaled Anwar Ahmed Hassan - ID 2304037 - Group 2
+
+Setup used before the questions:
+    mysql -u root -p < problem1_DDL.sql
+    mysql -u root -p < problem1_DML.sql
+    mysql -u root -p company
+
+======================================================================
+Q1.1  Insert a row in DEPARTMENT that references a row in EMPLOYEE.
+      Then try to delete the referenced row. What will happen?
+======================================================================
+SQL:
+    INSERT INTO DEPARTMENT (Dnumber, Dname, mgr_ssn, mgr_start_date)
+    VALUES (4, 'Research', '333333333', '2026-10-01');
+
+    DELETE FROM EMPLOYEE WHERE ssn = '333333333';
+
+Output:
+    mysql> INSERT INTO DEPARTMENT (Dnumber, Dname, mgr_ssn, mgr_start_date)
+        -> VALUES (4, 'Research', '333333333', '2026-10-01');
+    Query OK, 1 row affected (0.01 sec)
+
+    mysql> DELETE FROM EMPLOYEE WHERE ssn = '333333333';
+    ERROR 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`company`.`department`, CONSTRAINT `fk_department_mgr` FOREIGN KEY (`mgr_ssn`) REFERENCES `employee` (`ssn`))
+
+Explanation:
+    The INSERT works because employee 333333333 exists. The DELETE is
+    rejected: employee 333333333 is now referenced by DEPARTMENT.mgr_ssn
+    (the parent row of the foreign key), and MySQL does not allow a
+    referenced row to be deleted while a row still points to it
+    (referential integrity). The employee row is not deleted.
+    To delete it we must first change/delete the department row that
+    references it (e.g. UPDATE DEPARTMENT SET mgr_ssn = NULL WHERE Dnumber = 4;).
+
+======================================================================
+Q1.2  Insert a row in PROJECT that references a DEPARTMENT that doesn't
+      exist yet. What will happen?
+======================================================================
+SQL:
+    INSERT INTO PROJECT (Pnumber, Pname, Plocation, Dno)
+    VALUES (40, 'Robot Arm', 'Alexandria', 5);
+
+Output:
+    mysql> INSERT INTO PROJECT (Pnumber, Pname, Plocation, Dno)
+        -> VALUES (40, 'Robot Arm', 'Alexandria', 5);
+    ERROR 1452 (23000): Cannot add or update a child row: a foreign key constraint fails (`company`.`project`, CONSTRAINT `fk_project_dept` FOREIGN KEY (`Dno`) REFERENCES `department` (`Dnumber`))
+
+Explanation:
+    Department 5 does not exist in DEPARTMENT, so the value 5 in
+    PROJECT.Dno is neither NULL nor an existing Dnumber. MySQL rejects
+    the statement to keep referential integrity; no row is inserted.
+    It works if the department is inserted first:
+
+    mysql> INSERT INTO DEPARTMENT (Dnumber, Dname, mgr_ssn, mgr_start_date)
+        -> VALUES (5, 'Robotics', '444444444', '2026-10-05');
+    Query OK, 1 row affected (0.01 sec)
+
+    mysql> INSERT INTO PROJECT (Pnumber, Pname, Plocation, Dno)
+        -> VALUES (40, 'Robot Arm', 'Alexandria', 5);
+    Query OK, 1 row affected (0.01 sec)
+
+======================================================================
+Q1.3  If mgr_ssn and Dno are both NOT NULL, how will you insert the
+      first row in EMPLOYEE or DEPARTMENT?
+======================================================================
+Problem: the tables reference each other in a circle.
+    - an EMPLOYEE row needs an existing department (Dno NOT NULL), and
+    - a DEPARTMENT row needs an existing employee (mgr_ssn NOT NULL).
+Neither table can receive its first row first.
+
+SQL (done in a separate test database so the real one is not touched):
+    DROP DATABASE IF EXISTS company_q13;
+    CREATE DATABASE company_q13;
+    USE company_q13;
+
+    CREATE TABLE EMPLOYEE (
+        ssn CHAR(9) NOT NULL, fname VARCHAR(30) NOT NULL, lname VARCHAR(30) NOT NULL,
+        bdate DATE, address VARCHAR(100), gender CHAR(1), salary DECIMAL(10,2),
+        Dno INT NOT NULL,
+        PRIMARY KEY (ssn)
+    );
+    CREATE TABLE DEPARTMENT (
+        Dnumber INT NOT NULL, Dname VARCHAR(50) NOT NULL,
+        mgr_ssn CHAR(9) NOT NULL, mgr_start_date DATE,
+        PRIMARY KEY (Dnumber)
+    );
+    ALTER TABLE EMPLOYEE ADD CONSTRAINT fk_employee_dept
+        FOREIGN KEY (Dno) REFERENCES DEPARTMENT(Dnumber);
+    ALTER TABLE DEPARTMENT ADD CONSTRAINT fk_department_mgr
+        FOREIGN KEY (mgr_ssn) REFERENCES EMPLOYEE(ssn);
+
+Try 1 - employee first:
+    mysql> INSERT INTO EMPLOYEE (ssn, fname, lname, Dno)
+        -> VALUES ('111111111', 'Ahmed', 'Hassan', 1);
+    ERROR 1452 (23000): Cannot add or update a child row: a foreign key constraint fails (`company_q13`.`employee`, CONSTRAINT `fk_employee_dept` FOREIGN KEY (`Dno`) REFERENCES `department` (`Dnumber`))
+
+Try 2 - department first:
+    mysql> INSERT INTO DEPARTMENT (Dnumber, Dname, mgr_ssn)
+        -> VALUES (1, 'Headquarters', '111111111');
+    ERROR 1452 (23000): Cannot add or update a child row: a foreign key constraint fails (`company_q13`.`department`, CONSTRAINT `fk_department_mgr` FOREIGN KEY (`mgr_ssn`) REFERENCES `employee` (`ssn`))
+
+Solution - switch the foreign key check off only while inserting the
+first two rows, then switch it back on:
+    mysql> SET FOREIGN_KEY_CHECKS = 0;
+    Query OK, 0 rows affected (0.00 sec)
+
+    mysql> INSERT INTO EMPLOYEE (ssn, fname, lname, Dno)
+        -> VALUES ('111111111', 'Ahmed', 'Hassan', 1);
+    Query OK, 1 row affected (0.01 sec)
+
+    mysql> INSERT INTO DEPARTMENT (Dnumber, Dname, mgr_ssn)
+        -> VALUES (1, 'Headquarters', '111111111');
+    Query OK, 1 row affected (0.01 sec)
+
+    mysql> SET FOREIGN_KEY_CHECKS = 1;
+    Query OK, 0 rows affected (0.00 sec)
+
+Both rows now satisfy the constraints (employee 111111111 works in
+department 1, and department 1 is managed by employee 111111111).
+
+Other ways to break the circle:
+    - Keep one of the two columns nullable (this is what problem1_DDL.sql
+      does): insert the employee with Dno = NULL, then the department,
+      then UPDATE EMPLOYEE SET Dno = 1 ...
+    - Create the tables without the circular foreign key, insert the
+      first rows, then add the key with ALTER TABLE.
