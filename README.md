@@ -6,7 +6,8 @@ Introduction to Database Systems, Alexandria National University (Fall 2026)
 - Student ID: 2304037 (Group 2)
 - Student: Yehia Helaly
 - Student ID: 2304048 (Group 2)
-
+- Student: omar abdelkareem
+- Student ID: 2304060 (Group 2)
 
 
 
